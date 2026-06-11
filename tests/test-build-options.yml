@@ -1,0 +1,34 @@
+name: Test build options inputs
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_REF: refs/heads/main
+      GITHUB_SHA: abc123def456
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: action
+        uses: .
+        with:
+          name: test-image
+          username: testuser
+          password: testpassword
+          no_push: "true"
+          dockerfile: ${{ github.workspace }}/actions/hardened/elgohr--Publish-Docker-Github-Action/v4/tests/fixtures/CustomDockerfile
+          workdir: ${{ github.workspace }}/actions/hardened/elgohr--Publish-Docker-Github-Action/v4/tests/fixtures
+          context: ${{ github.workspace }}/actions/hardened/elgohr--Publish-Docker-Github-Action/v4/tests/fixtures
+          buildargs: MY_ARG=hello,ANOTHER_ARG=world
+          buildoptions: "--no-cache"
+          default_branch: main
+      - name: Assert tag is latest (on default branch main)
+        env:
+          ACTUAL: ${{ steps.action.outputs.tag }}
+        run: |
+          echo "actual tag: $ACTUAL"
+          if [ "$ACTUAL" != "latest" ]; then
+            echo "FAIL: expected tag 'latest' but got '$ACTUAL'"
+            exit 1
+          fi
+          echo "PASS: tag=$ACTUAL"

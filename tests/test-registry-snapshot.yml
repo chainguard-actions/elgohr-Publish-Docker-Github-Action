@@ -1,0 +1,42 @@
+name: Test registry, snapshot, tags, and cache inputs
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_REF: refs/heads/feature-branch
+      GITHUB_SHA: abc123def456
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: action
+        uses: .
+        with:
+          name: myorg/test-image
+          username: testuser
+          password: testpassword
+          registry: ghcr.io
+          snapshot: "true"
+          tags: v1.0.0,stable
+          cache: "false"
+          no_push: "true"
+      - name: Assert tag output
+        env:
+          ACTUAL: ${{ steps.action.outputs.tag }}
+        run: |
+          echo "actual tag: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: expected tag output to be non-empty"
+            exit 1
+          fi
+          echo "PASS: tag=$ACTUAL"
+      - name: Assert snapshot-tag output
+        env:
+          ACTUAL: ${{ steps.action.outputs.snapshot-tag }}
+        run: |
+          echo "actual snapshot-tag: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: expected snapshot-tag output to be non-empty"
+            exit 1
+          fi
+          echo "PASS: snapshot-tag=$ACTUAL"

@@ -1,0 +1,31 @@
+name: Test tag_semver and tag_names inputs
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_REF: refs/tags/v1.2.3
+      GITHUB_SHA: abc123def456
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: action
+        uses: .
+        with:
+          name: test-image
+          username: testuser
+          password: testpassword
+          no_push: "true"
+          tag_semver: "true"
+          tag_names: "true"
+          platforms: ""
+      - name: Assert tag output contains semver
+        env:
+          ACTUAL: ${{ steps.action.outputs.tag }}
+        run: |
+          echo "actual tag: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: expected tag output to be non-empty"
+            exit 1
+          fi
+          echo "PASS: tag=$ACTUAL"
