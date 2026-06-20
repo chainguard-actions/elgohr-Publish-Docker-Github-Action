@@ -1,0 +1,27 @@
+name: Test no_push with git tag and tag_names
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_REF: refs/tags/v2.3.4
+      GITHUB_EVENT_NAME: push
+      GITHUB_SHA: abc123def456
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        with:
+          name: test-image
+          username: ""
+          password: ""
+          no_push: "true"
+          tag_names: "true"
+          workdir: ${{ github.workspace }}/tests/fixtures
+
+      - name: Assert action completed successfully
+        run: |
+          echo "Action completed with no_push=true on git tag"
+          echo "PASS: action ran successfully"

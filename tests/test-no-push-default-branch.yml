@@ -1,0 +1,27 @@
+name: Test no_push with custom default_branch
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_REF: refs/heads/develop
+      GITHUB_EVENT_NAME: push
+      GITHUB_SHA: abc123def456
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        with:
+          name: test-image
+          username: ""
+          password: ""
+          no_push: "true"
+          default_branch: "develop"
+          workdir: ${{ github.workspace }}/tests/fixtures
+
+      - name: Assert action completed successfully
+        run: |
+          echo "Action completed with no_push=true and default_branch=develop"
+          echo "PASS: action ran successfully"
