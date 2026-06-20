@@ -9,6 +9,7 @@ Hardened by [Chainguard](https://www.chainguard.dev) from the upstream action at
 | Version | Tag | Upstream commit |
 |---------|-----|-----------------|
 | v4 | [`v4`](https://github.com/chainguard-actions/elgohr-Publish-Docker-Github-Action/tree/v4) | [`742a180`](https://github.com/elgohr/Publish-Docker-Github-Action/commit/742a180fa47f3adfb5115902ae4955acc6ad769b) |
+| v5 | [`v5`](https://github.com/chainguard-actions/elgohr-Publish-Docker-Github-Action/tree/v5) | [`1c2f28c`](https://github.com/elgohr/Publish-Docker-Github-Action/commit/1c2f28ccd9476e8a936ac9a1f287405504c93304) |
 
 ## Privacy
 
