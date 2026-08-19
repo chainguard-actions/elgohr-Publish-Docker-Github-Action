@@ -1,12 +1,9 @@
-name: Test tag_semver input
+name: Test buildoptions input
 on:
   workflow_dispatch:
 jobs:
   test:
     runs-on: ubuntu-latest
-    env:
-      GITHUB_REF: refs/tags/v1.2.3
-      GITHUB_SHA: abc123def456
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -26,28 +23,21 @@ jobs:
       - id: action
         uses: .
         with:
-          name: test/semver-image
+          name: test/buildoptions
           username: ""
           password: ""
-          tag_semver: "true"
+          tags: "buildoptions-test"
+          buildoptions: "--no-cache"
           no_push: "true"
 
-      - name: Assert semver tags were generated
+      - name: Assert buildoptions were passed to docker build
         run: |
           echo "Docker calls:"
           cat /tmp/docker-calls.log || true
-          # With tag_semver=true and GITHUB_REF=refs/tags/v1.2.3, the action should
-          # generate tags: 1.2.3, 1.2, 1
-          if grep -q "1\.2\.3" /tmp/docker-calls.log; then
-            echo "PASS: semver tag 1.2.3 was used"
+          if grep -q -- "--no-cache" /tmp/docker-calls.log; then
+            echo "PASS: --no-cache was passed to docker build"
           else
-            echo "FAIL: semver tag 1.2.3 was not found in docker build call"
+            echo "FAIL: --no-cache was not found in docker build call"
             cat /tmp/docker-calls.log
             exit 1
-          fi
-          if grep -q "1\.2\b" /tmp/docker-calls.log || grep -q ":1\.2 " /tmp/docker-calls.log || grep -q ":1\.2$" /tmp/docker-calls.log; then
-            echo "PASS: semver tag 1.2 was used"
-          else
-            echo "INFO: checking for minor tag 1.2 in full log"
-            cat /tmp/docker-calls.log
           fi

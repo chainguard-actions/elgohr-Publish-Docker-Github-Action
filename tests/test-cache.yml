@@ -1,12 +1,9 @@
-name: Test tag_semver input
+name: Test cache input
 on:
   workflow_dispatch:
 jobs:
   test:
     runs-on: ubuntu-latest
-    env:
-      GITHUB_REF: refs/tags/v1.2.3
-      GITHUB_SHA: abc123def456
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -19,35 +16,32 @@ jobs:
           #!/bin/sh
           echo "mock-docker: $*" >> /tmp/docker-calls.log
           echo "mock-docker: $*" >&2
-          exit 0
+          # For "docker pull", exit 1 to simulate image not cached yet (no cache-from added)
+          case "$1" in
+            pull) exit 1 ;;
+            *) exit 0 ;;
+          esac
           EOF
           chmod +x /usr/local/bin/docker
 
       - id: action
         uses: .
         with:
-          name: test/semver-image
+          name: test/cache-image
           username: ""
           password: ""
-          tag_semver: "true"
+          tags: "cache-test"
+          cache: "true"
           no_push: "true"
 
-      - name: Assert semver tags were generated
+      - name: Assert cache pull was attempted
         run: |
           echo "Docker calls:"
           cat /tmp/docker-calls.log || true
-          # With tag_semver=true and GITHUB_REF=refs/tags/v1.2.3, the action should
-          # generate tags: 1.2.3, 1.2, 1
-          if grep -q "1\.2\.3" /tmp/docker-calls.log; then
-            echo "PASS: semver tag 1.2.3 was used"
+          if grep -q "pull" /tmp/docker-calls.log; then
+            echo "PASS: docker pull was called (cache attempt)"
           else
-            echo "FAIL: semver tag 1.2.3 was not found in docker build call"
+            echo "FAIL: docker pull was not called — cache input may not be working"
             cat /tmp/docker-calls.log
             exit 1
-          fi
-          if grep -q "1\.2\b" /tmp/docker-calls.log || grep -q ":1\.2 " /tmp/docker-calls.log || grep -q ":1\.2$" /tmp/docker-calls.log; then
-            echo "PASS: semver tag 1.2 was used"
-          else
-            echo "INFO: checking for minor tag 1.2 in full log"
-            cat /tmp/docker-calls.log
           fi

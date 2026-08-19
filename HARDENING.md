@@ -8,45 +8,72 @@
 
 **Test Policy SHA:** `843adf9e4b8f85d0c08b27b9d0b09dd094b54702`
 
-**Harden Agent Version:** `1`
+**Harden Agent Version:** `2`
 
-Action **elgohr--Publish-Docker-Github-Action/v4** was hardened automatically. 2 finding(s) were identified and resolved across 1 iteration(s).
+Action **elgohr--Publish-Docker-Github-Action/v4** was hardened automatically. 3 finding(s) were identified and resolved across 1 iteration(s).
 
 ## Findings Fixed
 
+### unpinned-uses (severity: high)
+
+Multiple `uses:` references in workflow files use mutable tags or branch names instead of pinned 40-character SHA commit hashes, making the action vulnerable to supply-chain attacks if the referenced action is compromised or the tag is moved.
+
+In .github/workflows/assign.yml:
+- `uses: pozil/auto-assign-issue@v1` (tag)
+
+In .github/workflows/release.yml:
+- `uses: actions/checkout@v3` (tag, appears 4 times)
+- `uses: elgohr/Publish-Docker-Github-Action@main` (branch, appears 3 times)
+- `uses: docker/setup-buildx-action@v2` (tag)
+
+Locations:
+
+- `.github/workflows/assign.yml:9`
+- `.github/workflows/release.yml:14`
+- `.github/workflows/release.yml:24`
+- `.github/workflows/release.yml:26`
+- `.github/workflows/release.yml:38`
+- `.github/workflows/release.yml:40`
+- `.github/workflows/release.yml:52`
+- `.github/workflows/release.yml:54`
+- `.github/workflows/release.yml:56`
+- `.github/workflows/release.yml:74`
+
+### missing-permissions (severity: medium)
+
+Two workflow files are missing `permissions:` blocks on jobs that have no job-level permissions and no top-level permissions key, meaning those jobs run with the default (potentially broad) token permissions.
+
+- `.github/workflows/assign.yml`: No top-level `permissions:` key and the `auto-assign` job has no job-level `permissions:` block.
+- `.github/workflows/release.yml`: No top-level `permissions:` key and the `release` job has no job-level `permissions:` block (other jobs do have job-level permissions).
+
+Locations:
+
+- `.github/workflows/assign.yml:1`
+- `.github/workflows/release.yml:73`
+
 ### github-env-injection (severity: high)
 
-entrypoint.sh writes untrusted values to $GITHUB_OUTPUT without the required sanitization (printf '%s' ... | tr -d '\n\r'). Three writes are affected: (1) `echo "tag=${FIRST_TAG}" >> "$GITHUB_OUTPUT"` — FIRST_TAG is derived from INPUT_TAGS (user-supplied via inputs.tags) or from GITHUB_REF/GITHUB_SHA; (2) `echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"` — DIGEST comes from docker inspect on an attacker-influenced image name; (3) `echo "snapshot-tag=${SNAPSHOT_TAG}" >> "$GITHUB_OUTPUT"` — SNAPSHOT_TAG is derived from GITHUB_SHA. None of these writes are preceded by newline-stripping sanitization, allowing a malicious value containing newlines to inject arbitrary key=value pairs into the output context.
+In entrypoint.sh, three values derived from user-controlled or workflow-controlled inputs are written to $GITHUB_OUTPUT without the required sanitization step (`printf '%s' ... | tr -d '\n\r'`). An attacker can inject newlines into these values to poison subsequent steps that read from GITHUB_OUTPUT.
+
+1. `echo "tag=${FIRST_TAG}" >> "$GITHUB_OUTPUT"` — FIRST_TAG is derived from INPUT_TAGS (which maps to `inputs.tags`, a user-supplied input) or from GITHUB_REF. No sanitization is applied before the write.
+
+2. `echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"` — DIGEST is derived from docker inspect output, which can include image names constructed from user-controlled inputs. No sanitization is applied.
+
+3. `echo "snapshot-tag=${SNAPSHOT_TAG}" >> "$GITHUB_OUTPUT"` — SNAPSHOT_TAG is derived from GITHUB_SHA (workflow-controlled). No sanitization is applied before the write.
 
 Locations:
 
-- `entrypoint.sh:56`
-- `entrypoint.sh:60`
-- `entrypoint.sh:107`
-
-### script-injection (severity: high)
-
-Rule (b): Multiple env vars holding workflow-controllable input values are expanded unquoted inside shell commands in entrypoint.sh, allowing shell metacharacter injection. Affected lines: (1) `echo "${INPUT_PASSWORD}" | docker login -u ${INPUT_USERNAME} --password-stdin ${INPUT_REGISTRY}` — INPUT_USERNAME and INPUT_REGISTRY are unquoted; (2) `docker buildx build --push --metadata-file metadata.json ${PLATFORMS} ${INPUT_BUILDOPTIONS} ${BUILDPARAMS} ${BUILD_TAGS} ${CONTEXT}` — INPUT_BUILDOPTIONS and other vars are unquoted; (3) `docker build ${INPUT_BUILDOPTIONS} ${BUILDPARAMS} ${BUILD_TAGS} ${CONTEXT}` — INPUT_BUILDOPTIONS and other vars are unquoted. All INPUT_* variables are set from inputs.* expressions in action.yml and are therefore workflow-controllable. An attacker-supplied value containing shell metacharacters (`;`, `|`, `&`, `$(...)`, etc.) would be interpreted by the shell.
-
-Locations:
-
-- `entrypoint.sh:31`
-- `entrypoint.sh:121`
-- `entrypoint.sh:123`
+- `entrypoint.sh:62`
+- `entrypoint.sh:66`
+- `entrypoint.sh:130`
 
 ## Iteration Notes
 
 ### Iteration 1
 
-**Fixes applied:** github-env-injection, script-injection
+**Fixes applied:** unpinned-uses, missing-permissions, github-env-injection
 
 **Notes:**
 
-Fixed all findings in entrypoint.sh:
-
-1. github-env-injection (3 locations): Added newline sanitization before all three $GITHUB_OUTPUT writes using `printf '%s' "$VAR" | tr -d '\n\r'`. Applied to FIRST_TAG (→ SAFE_FIRST_TAG), DIGEST (→ SAFE_DIGEST), and SNAPSHOT_TAG (→ SAFE_SNAPSHOT_TAG).
-
-2. script-injection (3 locations):
-   - docker login (line 31): Quoted INPUT_USERNAME and INPUT_REGISTRY with double quotes.
-   - build() function (lines 121/123): Restructured to use `set --` to safely accumulate arguments. INPUT_BUILDOPTIONS tokens are iterated in a for loop so each token becomes a separately-quoted argument (preventing shell metacharacter interpretation). INPUT_PLATFORMS is now quoted. CONTEXT is now quoted. All arguments passed to docker via "$@".
+Fixed all three findings: (1) Pinned all 8 unpinned action references in assign.yml and release.yml to full 40-char SHA hashes with tag comments preserved. (2) Added minimal permissions blocks to assign.yml (issues: write) and release.yml release job (contents: write). (3) Sanitized all three GITHUB_OUTPUT writes in entrypoint.sh using printf + tr -d '\n\r' to prevent newline injection attacks on FIRST_TAG, DIGEST, and SNAPSHOT_TAG values.
 

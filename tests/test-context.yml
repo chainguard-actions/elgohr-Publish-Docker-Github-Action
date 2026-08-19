@@ -1,0 +1,46 @@
+name: Test context input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up custom context directory with Dockerfile
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/mycontext"
+          cp "$GITHUB_WORKSPACE/hardened/tests/fixtures/Dockerfile" "$GITHUB_WORKSPACE/mycontext/Dockerfile"
+
+      - name: Install mock docker that records args
+        run: |
+          cat > /usr/local/bin/docker << 'EOF'
+          #!/bin/sh
+          echo "mock-docker: $*" >> /tmp/docker-calls.log
+          echo "mock-docker: $*" >&2
+          exit 0
+          EOF
+          chmod +x /usr/local/bin/docker
+
+      - id: action
+        uses: .
+        with:
+          name: test/context-image
+          username: ""
+          password: ""
+          tags: "context-test"
+          context: "mycontext"
+          dockerfile: "mycontext/Dockerfile"
+          no_push: "true"
+
+      - name: Assert custom context was passed to docker build
+        run: |
+          echo "Docker calls:"
+          cat /tmp/docker-calls.log || true
+          if grep -q "mycontext" /tmp/docker-calls.log; then
+            echo "PASS: custom context 'mycontext' was passed to docker build"
+          else
+            echo "FAIL: custom context 'mycontext' was not found in docker build call"
+            cat /tmp/docker-calls.log
+            exit 1
+          fi

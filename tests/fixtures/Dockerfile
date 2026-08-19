@@ -1,2 +1,2 @@
-FROM scratch
-LABEL test="true"
+FROM alpine:3.18
+RUN echo "test image"

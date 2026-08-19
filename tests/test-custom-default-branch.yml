@@ -1,4 +1,4 @@
-name: Test basic no-push build
+name: Test custom default_branch produces latest tag
 on:
   workflow_dispatch:
 jobs:
@@ -13,20 +13,19 @@ jobs:
       - id: action
         uses: .
         with:
-          name: test/myimage
+          name: test/customdefault
           username: ""
           password: ""
-          tags: "no-push-test"
+          default_branch: "act-harness"
           no_push: "true"
 
-      - name: Assert Docker image was built
+      - name: Assert Docker image was built with latest tag for custom default branch
         run: |
           echo "Docker images:"
           docker images
-          if docker images | grep "test/myimage" | grep -q "no-push-test"; then
-            echo "PASS: Docker image test/myimage:no-push-test was built"
+          if docker images | grep "test/customdefault" | grep -q "latest"; then
+            echo "PASS: Docker image test/customdefault:latest was built (custom default_branch=act-harness)"
           else
-            echo "FAIL: Docker image test/myimage:no-push-test was not found"
-            docker images
+            echo "FAIL: Docker image test/customdefault:latest was not found"
             exit 1
           fi

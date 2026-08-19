@@ -1,0 +1,37 @@
+name: Test workdir input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create a subdirectory with its own Dockerfile
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/myapp"
+          cat > "$GITHUB_WORKSPACE/myapp/Dockerfile" <<'EOF'
+          FROM alpine:3.18
+          RUN echo "workdir test"
+          EOF
+
+      - id: action
+        uses: .
+        with:
+          name: test/workdir
+          username: ""
+          password: ""
+          workdir: myapp
+          tags: "workdir-test"
+          no_push: "true"
+
+      - name: Assert Docker image was built from workdir
+        run: |
+          echo "Docker images:"
+          docker images
+          if docker images | grep "test/workdir" | grep -q "workdir-test"; then
+            echo "PASS: Docker image test/workdir:workdir-test was built from workdir"
+          else
+            echo "FAIL: Docker image test/workdir:workdir-test was not found"
+            exit 1
+          fi

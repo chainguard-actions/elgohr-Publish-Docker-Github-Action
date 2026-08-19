@@ -1,0 +1,41 @@
+name: Test custom tags input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Copy fixture Dockerfile to workspace
+        run: cp "$GITHUB_WORKSPACE/tests/fixtures/Dockerfile" "$GITHUB_WORKSPACE/Dockerfile"
+
+      - id: action
+        uses: .
+        with:
+          name: test/customtags
+          username: ""
+          password: ""
+          tags: "v1.0.0,stable"
+          no_push: "true"
+
+      - name: Assert Docker image was built with first custom tag
+        run: |
+          echo "Docker images:"
+          docker images
+          if docker images | grep "test/customtags" | grep -q "v1.0.0"; then
+            echo "PASS: Docker image test/customtags:v1.0.0 was built"
+          else
+            echo "FAIL: Docker image test/customtags:v1.0.0 was not found"
+            exit 1
+          fi
+
+      - name: Assert second custom tag was applied
+        run: |
+          if docker images | grep "test/customtags" | grep -q "stable"; then
+            echo "PASS: Docker image test/customtags:stable was built"
+          else
+            echo "FAIL: Docker image test/customtags:stable was not found"
+            docker images
+            exit 1
+          fi

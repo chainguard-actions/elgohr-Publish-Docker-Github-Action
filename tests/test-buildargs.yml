@@ -1,0 +1,30 @@
+name: Test buildargs input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        with:
+          name: test/buildargs
+          username: ""
+          password: ""
+          dockerfile: tests/fixtures/Dockerfile.buildargs
+          buildargs: "MY_ARG=hello_world"
+          tags: "buildargs-test"
+          no_push: "true"
+
+      - name: Assert Docker image was built with buildargs
+        run: |
+          echo "Docker images:"
+          docker images
+          if docker images | grep "test/buildargs" | grep -q "buildargs-test"; then
+            echo "PASS: Docker image test/buildargs:buildargs-test was built with build args"
+          else
+            echo "FAIL: Docker image test/buildargs:buildargs-test was not found"
+            exit 1
+          fi

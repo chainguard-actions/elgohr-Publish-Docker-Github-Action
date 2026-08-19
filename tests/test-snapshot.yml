@@ -1,0 +1,47 @@
+name: Test snapshot tag generation
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Copy fixture Dockerfile to workspace
+        run: cp "$GITHUB_WORKSPACE/tests/fixtures/Dockerfile" "$GITHUB_WORKSPACE/Dockerfile"
+
+      - id: action
+        uses: .
+        with:
+          name: test/snapshot
+          username: ""
+          password: ""
+          tags: "base-tag"
+          snapshot: "true"
+          no_push: "true"
+
+      - name: Assert snapshot-tag output is set
+        env:
+          SNAPSHOT_TAG: ${{ steps.action.outputs.snapshot-tag }}
+        run: |
+          echo "snapshot-tag: $SNAPSHOT_TAG"
+          # snapshot-tag is set in useSnapshot() which runs before build() and before
+          # the no_push exit, so it should be available even with no_push=true
+          if [ -n "$SNAPSHOT_TAG" ]; then
+            echo "PASS: snapshot-tag is set to '$SNAPSHOT_TAG'"
+          else
+            echo "FAIL: snapshot-tag output was not set"
+            exit 1
+          fi
+
+      - name: Assert Docker images include snapshot tag
+        run: |
+          echo "Docker images:"
+          docker images
+          # The snapshot tag is a timestamp+short SHA, so we just check test/snapshot exists
+          if docker images | grep -q "test/snapshot"; then
+            echo "PASS: Docker image test/snapshot was built (snapshot mode)"
+          else
+            echo "FAIL: Docker image test/snapshot was not found"
+            exit 1
+          fi

@@ -29,7 +29,7 @@ main() {
   fi
 
   if uses "${INPUT_USERNAME}" && uses "${INPUT_PASSWORD}"; then
-    echo "${INPUT_PASSWORD}" | docker login -u "${INPUT_USERNAME}" --password-stdin "${INPUT_REGISTRY}"
+    echo "${INPUT_PASSWORD}" | docker login -u ${INPUT_USERNAME} --password-stdin ${INPUT_REGISTRY}
   fi
 
   FIRST_TAG=$(echo "${TAGS}" | cut -d ' ' -f1)
@@ -67,16 +67,16 @@ main() {
   fi
 
   echo "::set-output name=tag::${FIRST_TAG}"
-  SAFE_FIRST_TAG=$(printf '%s' "${FIRST_TAG}" | tr -d '\n\r')
-  echo "tag=${SAFE_FIRST_TAG}" >> "$GITHUB_OUTPUT"
+  safe_first_tag=$(printf '%s' "${FIRST_TAG}" | tr -d '\n\r')
+  echo "tag=${safe_first_tag}" >> "$GITHUB_OUTPUT"
   if uses "${INPUT_PLATFORMS}"; then
     DIGEST=$(jq -r '."containerimage.digest"' metadata.json)
   else 
-    DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "${DOCKERNAME}")
+    DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' ${DOCKERNAME})
   fi
   echo "::set-output name=digest::${DIGEST}"
-  SAFE_DIGEST=$(printf '%s' "${DIGEST}" | tr -d '\n\r')
-  echo "digest=${SAFE_DIGEST}" >> "$GITHUB_OUTPUT"
+  safe_digest=$(printf '%s' "${DIGEST}" | tr -d '\n\r')
+  echo "digest=${safe_digest}" >> "$GITHUB_OUTPUT"
 
   docker logout
 }
@@ -187,34 +187,20 @@ useSnapshot() {
   local SNAPSHOT_TAG="${TIMESTAMP}${SHORT_SHA}"
   TAGS="${TAGS} ${SNAPSHOT_TAG}"
   echo "::set-output name=snapshot-tag::${SNAPSHOT_TAG}"
-  SAFE_SNAPSHOT_TAG=$(printf '%s' "${SNAPSHOT_TAG}" | tr -d '\n\r')
-  echo "snapshot-tag=${SAFE_SNAPSHOT_TAG}" >> "$GITHUB_OUTPUT"
+  safe_snapshot_tag=$(printf '%s' "${SNAPSHOT_TAG}" | tr -d '\n\r')
+  echo "snapshot-tag=${safe_snapshot_tag}" >> "$GITHUB_OUTPUT"
 }
 
 build() {
-  # Build the argument list safely using positional parameters
-  set --
-  # Add build options (word-split by spaces, each token becomes a separate arg)
-  for OPT in ${INPUT_BUILDOPTIONS}; do
-    set -- "$@" "${OPT}"
-  done
-  # Add internally-constructed build params (word-split intentionally)
-  for PARAM in ${BUILDPARAMS}; do
-    set -- "$@" "${PARAM}"
-  done
-  # Add image tags
+  local BUILD_TAGS=""
   for TAG in ${TAGS}; do
-    set -- "$@" -t "${INPUT_NAME}:${TAG}"
+    BUILD_TAGS="${BUILD_TAGS}-t ${INPUT_NAME}:${TAG} "
   done
-  # Add context (user-supplied, single value)
-  set -- "$@" "${CONTEXT}"
-
   if uses "${INPUT_PLATFORMS}"; then
-    docker buildx build --push --metadata-file metadata.json \
-      --platform "${INPUT_PLATFORMS}" \
-      "$@"
+    local PLATFORMS="--platform ${INPUT_PLATFORMS}"
+    docker buildx build --push --metadata-file metadata.json ${PLATFORMS} ${INPUT_BUILDOPTIONS} ${BUILDPARAMS} ${BUILD_TAGS} ${CONTEXT}
   else
-    docker build "$@"
+    docker build ${INPUT_BUILDOPTIONS} ${BUILDPARAMS} ${BUILD_TAGS} ${CONTEXT}
   fi
 }
 

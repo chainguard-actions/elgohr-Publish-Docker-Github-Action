@@ -1,0 +1,61 @@
+name: Test platforms input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Copy fixture Dockerfile to workspace
+        run: cp "$GITHUB_WORKSPACE/hardened/tests/fixtures/Dockerfile" "$GITHUB_WORKSPACE/Dockerfile"
+
+      - name: Install mock docker that records args and handles buildx
+        run: |
+          cat > /usr/local/bin/docker << 'EOF'
+          #!/bin/sh
+          echo "mock-docker: $*" >> /tmp/docker-calls.log
+          echo "mock-docker: $*" >&2
+          # For buildx build with --metadata-file, create a fake metadata file
+          case "$*" in
+            *metadata-file*)
+              for arg in "$@"; do
+                prev="$prev_arg"
+                prev_arg="$arg"
+                if [ "$prev" = "--metadata-file" ]; then
+                  echo '{"containerimage.digest":"sha256:fakedigest"}' > "$arg"
+                fi
+              done
+              ;;
+          esac
+          exit 0
+          EOF
+          chmod +x /usr/local/bin/docker
+
+      - id: action
+        uses: .
+        with:
+          name: test/platforms-image
+          username: fakeuser
+          password: fakepassword
+          tags: "platforms-test"
+          platforms: "linux/amd64,linux/arm64"
+
+      - name: Assert platforms were passed to docker buildx build
+        run: |
+          echo "Docker calls:"
+          cat /tmp/docker-calls.log || true
+          if grep -q -- "--platform" /tmp/docker-calls.log; then
+            echo "PASS: --platform was passed to docker buildx build"
+          else
+            echo "FAIL: --platform was not found in docker build call"
+            cat /tmp/docker-calls.log
+            exit 1
+          fi
+          if grep -q "linux/amd64,linux/arm64" /tmp/docker-calls.log; then
+            echo "PASS: platform value 'linux/amd64,linux/arm64' was passed"
+          else
+            echo "FAIL: platform value not found in docker build call"
+            cat /tmp/docker-calls.log
+            exit 1
+          fi

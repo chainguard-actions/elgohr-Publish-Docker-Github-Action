@@ -1,4 +1,4 @@
-name: Test basic no-push build
+name: Test custom registry prefix
 on:
   workflow_dispatch:
 jobs:
@@ -13,20 +13,21 @@ jobs:
       - id: action
         uses: .
         with:
-          name: test/myimage
+          name: myorg/myimage
           username: ""
           password: ""
-          tags: "no-push-test"
+          registry: ghcr.io
+          tags: "registry-test"
           no_push: "true"
 
-      - name: Assert Docker image was built
+      - name: Assert Docker image was built with registry prefix
         run: |
           echo "Docker images:"
           docker images
-          if docker images | grep "test/myimage" | grep -q "no-push-test"; then
-            echo "PASS: Docker image test/myimage:no-push-test was built"
+          # The action prepends registry to name: ghcr.io/myorg/myimage
+          if docker images | grep -q "ghcr.io/myorg/myimage"; then
+            echo "PASS: Docker image ghcr.io/myorg/myimage was built with registry prefix"
           else
-            echo "FAIL: Docker image test/myimage:no-push-test was not found"
-            docker images
+            echo "FAIL: Docker image ghcr.io/myorg/myimage was not found"
             exit 1
           fi

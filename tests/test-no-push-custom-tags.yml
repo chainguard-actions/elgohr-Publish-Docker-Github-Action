@@ -1,0 +1,40 @@
+name: Test no-push with custom tags
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_REF: refs/heads/master
+      GITHUB_SHA: abc123def456
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install mock docker
+        run: |
+          cat > /usr/local/bin/docker << 'EOF'
+          #!/bin/sh
+          echo "mock-docker: $*" >&2
+          exit 0
+          EOF
+          chmod +x /usr/local/bin/docker
+
+      - id: action
+        uses: .
+        with:
+          name: test-image
+          username: ""
+          password: ""
+          no_push: "true"
+          tags: "v1.0.0,stable"
+
+      - name: Assert action succeeded
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          if [ "$OUTCOME" != "success" ]; then
+            echo "FAIL: expected action to succeed with custom tags, got '$OUTCOME'"
+            exit 1
+          fi
+          echo "PASS"
