@@ -4,7 +4,7 @@
 
 > This file was generated automatically by the hardening agent.
 
-**Policy SHA:** `d636be7e43ef829af6e853da6b3c7566db9f72fe`
+**Policy SHA:** `374911c4be584df24e6da57af2d990570ef0f859`
 
 **Test Policy SHA:** `843adf9e4b8f85d0c08b27b9d0b09dd094b54702`
 
@@ -14,66 +14,97 @@ Action **elgohr--Publish-Docker-Github-Action/v4** was hardened automatically. 3
 
 ## Findings Fixed
 
-### unpinned-uses (severity: high)
-
-Multiple `uses:` references in workflow files use mutable tags or branch names instead of pinned 40-character SHA commit hashes, making the action vulnerable to supply-chain attacks if the referenced action is compromised or the tag is moved.
-
-In .github/workflows/assign.yml:
-- `uses: pozil/auto-assign-issue@v1` (tag)
-
-In .github/workflows/release.yml:
-- `uses: actions/checkout@v3` (tag, appears 4 times)
-- `uses: elgohr/Publish-Docker-Github-Action@main` (branch, appears 3 times)
-- `uses: docker/setup-buildx-action@v2` (tag)
-
-Locations:
-
-- `.github/workflows/assign.yml:9`
-- `.github/workflows/release.yml:14`
-- `.github/workflows/release.yml:24`
-- `.github/workflows/release.yml:26`
-- `.github/workflows/release.yml:38`
-- `.github/workflows/release.yml:40`
-- `.github/workflows/release.yml:52`
-- `.github/workflows/release.yml:54`
-- `.github/workflows/release.yml:56`
-- `.github/workflows/release.yml:74`
-
-### missing-permissions (severity: medium)
-
-Two workflow files are missing `permissions:` blocks on jobs that have no job-level permissions and no top-level permissions key, meaning those jobs run with the default (potentially broad) token permissions.
-
-- `.github/workflows/assign.yml`: No top-level `permissions:` key and the `auto-assign` job has no job-level `permissions:` block.
-- `.github/workflows/release.yml`: No top-level `permissions:` key and the `release` job has no job-level `permissions:` block (other jobs do have job-level permissions).
-
-Locations:
-
-- `.github/workflows/assign.yml:1`
-- `.github/workflows/release.yml:73`
-
 ### github-env-injection (severity: high)
 
-In entrypoint.sh, three values derived from user-controlled or workflow-controlled inputs are written to $GITHUB_OUTPUT without the required sanitization step (`printf '%s' ... | tr -d '\n\r'`). An attacker can inject newlines into these values to poison subsequent steps that read from GITHUB_OUTPUT.
-
-1. `echo "tag=${FIRST_TAG}" >> "$GITHUB_OUTPUT"` — FIRST_TAG is derived from INPUT_TAGS (which maps to `inputs.tags`, a user-supplied input) or from GITHUB_REF. No sanitization is applied before the write.
-
-2. `echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"` — DIGEST is derived from docker inspect output, which can include image names constructed from user-controlled inputs. No sanitization is applied.
-
-3. `echo "snapshot-tag=${SNAPSHOT_TAG}" >> "$GITHUB_OUTPUT"` — SNAPSHOT_TAG is derived from GITHUB_SHA (workflow-controlled). No sanitization is applied before the write.
+entrypoint.sh, which the composite step in action.yml runs, writes `echo "tag=${FIRST_TAG}" >> "$GITHUB_OUTPUT"` without the `printf '%s' ... | tr -d '\n\r'` step first. FIRST_TAG comes from INPUT_TAGS (inputs.tags) via `echo "${INPUT_TAGS}" | sed ... | cut -d ' ' -f1`, or from INPUT_NAME (inputs.name) via cut -d':' -f2. Neither path removes newlines. A value with an embedded newline can therefore inject extra key=value entries into the step outputs.
 
 Locations:
 
-- `entrypoint.sh:62`
-- `entrypoint.sh:66`
-- `entrypoint.sh:130`
+- `entrypoint.sh:70`
+- `action.yml:69`
+
+### prior-fix (severity: high)
+
+Carried forward from this version's previous harden, which fixed it; fix it again unless the code no longer has the problem. The previous harden changed action.yml without recording a finding for it, and this analysis reported nothing there. Re-apply its security changes unless the code no longer needs them. The previous patch:
+```diff
+diff --git a/action.yml b/action.yml
+index 6d34270..48be96e 100644
+--- a/action.yml
++++ b/action.yml
+@@ -68,7 +68,24 @@ outputs:
+     value: ${{ steps.docker-publish.outputs.digest }}
+ runs:
+   using: 'composite'
+-  steps:      
++  steps:
+     - id: docker-publish
+       run: $GITHUB_ACTION_PATH/entrypoint.sh
+       shell: bash
+@@ -89,4 +106,4 @@ runs:
+         INPUT_TAG_NAMES: ${{ inputs.tag_names }}
+         INPUT_TAG_SEMVER: ${{ inputs.tag_semver }}
+         INPUT_NO_PUSH: ${{ inputs.no_push }}
+-        INPUT_PLATFORMS: ${{ inputs.platforms }}
+\ No newline at end of file
++        INPUT_PLATFORMS: ${{ inputs.platforms }}
+
+```
+
+Locations:
+
+- `action.yml`
+
+### prior-fix (severity: high)
+
+Carried forward from this version's previous harden, which fixed it; fix it again unless the code no longer has the problem. The previous harden changed entrypoint.sh without recording a finding for it, and this analysis reported nothing there. Re-apply its security changes unless the code no longer needs them. The previous patch:
+```diff
+diff --git a/entrypoint.sh b/entrypoint.sh
+index fbdad83..1607792 100755
+--- a/entrypoint.sh
++++ b/entrypoint.sh
+@@ -67,14 +67,16 @@ main() {
+   fi
+ 
+   echo "::set-output name=tag::${FIRST_TAG}"
+-  echo "tag=${FIRST_TAG}" >> "$GITHUB_OUTPUT"
++  safe_first_tag=$(printf '%s' "${FIRST_TAG}" | tr -d '\n\r')
++  echo "tag=${safe_first_tag}" >> "$GITHUB_OUTPUT"
+   if uses "${INPUT_PLATFORMS}"; then
+     DIGEST=$(jq -r '."containerimage.digest"' metadata.json)
+   else 
+     DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' ${DOCKERNAME})
+   fi
+   echo "::set-output name=digest::${DIGEST}"
+-  echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
++  safe_digest=$(printf '%s' "${DIGEST}" | tr -d '\n\r')
++  echo "digest=${safe_digest}" >> "$GITHUB_OUTPUT"
+ 
+   docker logout
+ }
+@@ -185,7 +187,8 @@ useSnapshot() {
+   local SNAPSHOT_TAG="${TIMESTAMP}${SHORT_SHA}"
+   TAGS="${TAGS} ${SNAPSHOT_TAG}"
+   echo "::set-output name=snapshot-tag::${SNAPSHOT_TAG}"
+-  echo "snapshot-tag=${SNAPSHOT_TAG}" >> "$GITHUB_OUTPUT"
++  safe_snapshot_tag=$(printf '%s' "${SNAPSHOT_TAG}" | tr -d '\n\r')
++  echo "snapshot-tag=${safe_snapshot_tag}" >> "$GITHUB_OUTPUT"
+ }
+ 
+ build() {
+
+```
+
+Locations:
+
+- `entrypoint.sh`
 
 ## Iteration Notes
 
 ### Iteration 1
 
-**Fixes applied:** unpinned-uses, missing-permissions, github-env-injection
+**Fixes applied:** github-env-injection, prior-fix
 
 **Notes:**
 
-Fixed all three findings: (1) Pinned all 8 unpinned action references in assign.yml and release.yml to full 40-char SHA hashes with tag comments preserved. (2) Added minimal permissions blocks to assign.yml (issues: write) and release.yml release job (contents: write). (3) Sanitized all three GITHUB_OUTPUT writes in entrypoint.sh using printf + tr -d '\n\r' to prevent newline injection attacks on FIRST_TAG, DIGEST, and SNAPSHOT_TAG values.
+entrypoint.sh: the tag, digest and snapshot-tag values now go through printf '%s' | tr -d '\n\r' before they are written to $GITHUB_OUTPUT. This re-applies the previous patch. Each value is captured first and cleaned afterwards, so if the command producing it fails, set -e still stops the script. action.yml: re-applied the previous changes, which were only cosmetic (removed trailing whitespace after 'steps:' and added a newline at the end of the file). action.yml had no security issue to fix. Nothing was run to test these changes. The deprecated ::set-output lines were left exactly as upstream wrote them.
 
