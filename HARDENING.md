@@ -4,60 +4,184 @@
 
 > This file was generated automatically by the hardening agent.
 
-**Policy SHA:** `d636be7e43ef829af6e853da6b3c7566db9f72fe`
+**Policy SHA:** `374911c4be584df24e6da57af2d990570ef0f859`
 
 **Test Policy SHA:** `843adf9e4b8f85d0c08b27b9d0b09dd094b54702`
 
-**Harden Agent Version:** `1`
+**Harden Agent Version:** `2`
 
-Action **elgohr--Publish-Docker-Github-Action/v5** was hardened automatically. 1 finding(s) were identified and resolved across 2 iteration(s).
+Action **elgohr--Publish-Docker-Github-Action/v5** was hardened automatically. 3 finding(s) were identified and resolved across 1 iteration(s).
 
 ## Findings Fixed
 
 ### github-env-injection (severity: high)
 
-entrypoint.sh writes values derived from workflow-controlled (untrusted) inherited environment variables to $GITHUB_OUTPUT without the required sanitization step (`printf '%s' ... | tr -d '\n\r'`).
-
-1. Line ~57: `echo "tag=${FIRST_TAG}" >> "$GITHUB_OUTPUT"` — FIRST_TAG is derived from TAGS, which is set from INPUT_TAGS (mapped from inputs.tags by the calling workflow) or from GITHUB_REF/GITHUB_SHA (inherited env vars). An attacker can inject newlines via a crafted tag or branch name to poison GITHUB_OUTPUT.
-
-2. Line ~62: `echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"` — DIGEST is obtained from `docker inspect` of DOCKERNAME, which includes INPUT_NAME (mapped from inputs.name). No sanitization before the write.
-
-3. Line ~130: `echo "snapshot-tag=${SNAPSHOT_TAG}" >> "$GITHUB_OUTPUT"` — SNAPSHOT_TAG is composed of a timestamp and the first 6 characters of GITHUB_SHA (an inherited env var). While GITHUB_SHA is typically a hex string, it is still an unsanitized inherited env var written directly to GITHUB_OUTPUT.
-
-All three writes should be preceded by: `safe=$(printf '%s' "$VAR" | tr -d '\n\r')` before the echo.
+The composite step 'docker-publish' (action.yml) runs entrypoint.sh, which writes `echo "tag=${FIRST_TAG}" >> "$GITHUB_OUTPUT"`. FIRST_TAG comes from INPUT_TAGS (inputs.tags), INPUT_NAME (inputs.name) or GITHUB_REF, via `FIRST_TAG=$(echo "${TAGS}" | cut -d ' ' -f1)`. `cut` works line by line, so newlines in the value survive. An attacker who controls that value can add extra key=value output lines. The same applies to `echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"`, where DIGEST is read from docker inspect or metadata.json for an image named by inputs. Neither write strips newlines first with `printf '%s' ... | tr -d '\n\r'`.
 
 Locations:
 
-- `entrypoint.sh:57`
-- `entrypoint.sh:62`
-- `entrypoint.sh:130`
+- `entrypoint.sh:70`
+- `entrypoint.sh:76`
+- `action.yml:75`
+
+### prior-fix (severity: high)
+
+Carried forward from this version's previous harden, which fixed it; fix it again unless the code no longer has the problem. The previous harden changed action.yml without recording a finding for it, and this analysis reported nothing there. Re-apply its security changes unless the code no longer needs them. The previous patch:
+```diff
+diff --git a/action.yml b/action.yml
+index 6d34270..48be96e 100644
+--- a/action.yml
++++ b/action.yml
+@@ -68,7 +68,24 @@ outputs:
+     value: ${{ steps.docker-publish.outputs.digest }}
+ runs:
+   using: 'composite'
+-  steps:      
++  steps:
+     - id: docker-publish
+       run: $GITHUB_ACTION_PATH/entrypoint.sh
+       shell: bash
+@@ -89,4 +106,4 @@ runs:
+         INPUT_TAG_NAMES: ${{ inputs.tag_names }}
+         INPUT_TAG_SEMVER: ${{ inputs.tag_semver }}
+         INPUT_NO_PUSH: ${{ inputs.no_push }}
+-        INPUT_PLATFORMS: ${{ inputs.platforms }}
+\ No newline at end of file
++        INPUT_PLATFORMS: ${{ inputs.platforms }}
+
+```
+
+Locations:
+
+- `action.yml`
+
+### prior-fix (severity: high)
+
+Carried forward from this version's previous harden, which fixed it; fix it again unless the code no longer has the problem. The previous harden changed entrypoint.sh without recording a finding for it, and this analysis reported nothing there. Re-apply its security changes unless the code no longer needs them. The previous patch:
+```diff
+diff --git a/entrypoint.sh b/entrypoint.sh
+index 4f49f02..8ea4a64 100755
+--- a/entrypoint.sh
++++ b/entrypoint.sh
+@@ -1,4 +1,4 @@
+-#!/bin/sh
++#!/bin/bash
+ set -e
+ 
+ main() {
+@@ -29,12 +29,12 @@ main() {
+   fi
+ 
+   if uses "${INPUT_USERNAME}" && uses "${INPUT_PASSWORD}"; then
+-    echo "${INPUT_PASSWORD}" | docker login -u ${INPUT_USERNAME} --password-stdin ${INPUT_REGISTRY}
++    echo "${INPUT_PASSWORD}" | docker login -u "${INPUT_USERNAME}" --password-stdin "${INPUT_REGISTRY}"
+   fi
+ 
+   FIRST_TAG=$(echo "${TAGS}" | cut -d ' ' -f1)
+   DOCKERNAME="${INPUT_NAME}:${FIRST_TAG}"
+-  BUILDPARAMS=""
++  BUILDPARAMS=()
+   CONTEXT="."
+ 
+   if uses "${INPUT_DOCKERFILE}"; then
+@@ -67,13 +67,15 @@ main() {
+     push
+   fi
+ 
+-  echo "tag=${FIRST_TAG}" >> "$GITHUB_OUTPUT"
++  safe_tag=$(printf '%s' "${FIRST_TAG}" | tr -d '\n\r')
++  echo "tag=${safe_tag}" >> "$GITHUB_OUTPUT"
+   if uses "${INPUT_PLATFORMS}"; then
+     DIGEST=$(jq -r '."containerimage.digest"' metadata.json)
+   else 
+-    DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' ${DOCKERNAME})
++    DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "${DOCKERNAME}")
+   fi
+-  echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
++  safe_digest=$(printf '%s' "${DIGEST}" | tr -d '\n\r')
++  echo "digest=${safe_digest}" >> "$GITHUB_OUTPUT"
+ 
+   docker logout
+ }
+@@ -146,19 +148,19 @@ changeWorkingDirectory() {
+ }
+ 
+ useCustomDockerfile() {
+-  BUILDPARAMS="${BUILDPARAMS} -f ${INPUT_DOCKERFILE}"
++  BUILDPARAMS+=("-f" "${INPUT_DOCKERFILE}")
+ }
+ 
+ addBuildArgs() {
+   for ARG in $(echo "${INPUT_BUILDARGS}" | tr ',' '\n'); do
+-    BUILDPARAMS="${BUILDPARAMS} --build-arg ${ARG}"
++    BUILDPARAMS+=("--build-arg" "${ARG}")
+     echo "::add-mask::${ARG}"
+   done
+ }
+ 
+ useBuildCache() {
+   if docker pull "${DOCKERNAME}" 2>/dev/null; then
+-    BUILDPARAMS="${BUILDPARAMS} --cache-from ${DOCKERNAME}"
++    BUILDPARAMS+=("--cache-from" "${DOCKERNAME}")
+   fi
+ }
+ 
+@@ -183,23 +185,35 @@ useSnapshot() {
+   local SHORT_SHA=$(echo "${GITHUB_SHA}" | cut -c1-6)
+   local SNAPSHOT_TAG="${TIMESTAMP}${SHORT_SHA}"
+   TAGS="${TAGS} ${SNAPSHOT_TAG}"
+-  echo "snapshot-tag=${SNAPSHOT_TAG}" >> "$GITHUB_OUTPUT"
++  safe_snapshot_tag=$(printf '%s' "${SNAPSHOT_TAG}" | tr -d '\n\r')
++  echo "snapshot-tag=${safe_snapshot_tag}" >> "$GITHUB_OUTPUT"
+ }
+ 
+ build() {
+-  local BUILD_TAGS=""
++  local BUILD_TAGS=()
+   for TAG in ${TAGS}; do
+-    BUILD_TAGS="${BUILD_TAGS}-t ${INPUT_NAME}:${TAG} "
++    BUILD_TAGS+=("-t" "${INPUT_NAME}:${TAG}")
+   done
++  # Split INPUT_BUILDOPTIONS safely into an array using word splitting on the
++  # trusted-but-multi-word option string. We use eval-free approach via read.
++  local BUILDOPTS=()
++  if uses "${INPUT_BUILDOPTIONS}"; then
++    while IFS= read -r -d '' opt; do
++      BUILDOPTS+=("$opt")
++    done < <(xargs printf '%s\0' <<< "${INPUT_BUILDOPTIONS}")
++  fi
+   if uses "${INPUT_PLATFORMS}"; then
+-    local PLATFORMS="--platform ${INPUT_PLATFORMS}"
+     local PUSHING="--push"
+     if usesBoolean "${INPUT_NO_PUSH}"; then
+       PUSHING=""
+     fi
+-    docker buildx build ${PUSHING} --metadata-file metadata.json ${PLATFORMS} ${INPUT_BUILDOPTIONS} ${BUILDPARAMS} ${BUILD_TAGS} ${CONTEXT}
++    if [ -n "${PUSHING}" ]; then
++      docker buildx build "${PUSHING}" --metadata-file metadata.json --platform "${INPUT_PLATFORMS}" "${BUILDOPTS[@]}" "${BUILDPARAMS[@]}" "${BUILD_TAGS[@]}" "${CONTEXT}"
++    else
++      docker buildx build --metadata-file metadata.json --platform "${INPUT_PLATFORMS}" "${BUILDOPTS[@]}" "${BUILDPARAMS[@]}" "${BUILD_TAGS[@]}" "${CONTEXT}"
++    fi
+   else
+-    docker build ${INPUT_BUILDOPTIONS} ${BUILDPARAMS} ${BUILD_TAGS} ${CONTEXT}
++    docker build "${BUILDOPTS[@]}" "${BUILDPARAMS[@]}" "${BUILD_TAGS[@]}" "${CONTEXT}"
+   fi
+ }
+ 
+
+```
+
+Locations:
+
+- `entrypoint.sh`
 
 ## Iteration Notes
 
 ### Iteration 1
 
-**Fixes applied:** github-env-injection
+**Fixes applied:** github-env-injection, prior-fix
 
 **Notes:**
 
-Fixed three GITHUB_OUTPUT injection vulnerabilities in entrypoint.sh:
-1. Line ~57: Added `safe_tag=$(printf '%s' "${FIRST_TAG}" | tr -d '\n\r')` before writing tag to GITHUB_OUTPUT.
-2. Line ~62: Added `safe_digest=$(printf '%s' "${DIGEST}" | tr -d '\n\r')` before writing digest to GITHUB_OUTPUT.
-3. Line ~130 (useSnapshot function): Added `safe_snapshot_tag=$(printf '%s' "${SNAPSHOT_TAG}" | tr -d '\n\r')` before writing snapshot-tag to GITHUB_OUTPUT.
-All three writes now use the sanitized variables instead of the raw values, preventing newline injection via crafted tag names, branch names, or other workflow-controlled inputs.
-
-### Iteration 1
-
-**Fixes applied:** script-injection
-
-**Notes:**
-
-Fixed all four script-injection vulnerabilities in entrypoint.sh:
-1. Quoted INPUT_USERNAME and INPUT_REGISTRY in docker login command (line 32)
-2. Converted BUILDPARAMS from a string to a bash array; useCustomDockerfile() now uses BUILDPARAMS+=("-f" "${INPUT_DOCKERFILE}") with proper quoting (line ~112)
-3. INPUT_BUILDOPTIONS is now safely split into a BUILDOPTS bash array using xargs printf '%s\0' (no raw word-splitting), and expanded as "${BUILDOPTS[@]}" in both docker buildx build and docker build calls (lines ~148, ~150)
-4. Changed shebang from #!/bin/sh to #!/bin/bash to enable array support
-5. Also fixed addBuildArgs() and useBuildCache() to use array syntax for BUILDPARAMS
-6. BUILD_TAGS converted to array for consistent safe expansion
-7. PUSHING flag handled via conditional branch to avoid passing empty string as a positional argument
+entrypoint.sh: newlines are now stripped from the tag, digest and snapshot-tag values with printf | tr -d '\n\r' before they are written to GITHUB_OUTPUT. I re-applied the earlier patch: a bash shebang (this is a composite action on the runner, so bash is there), quoted docker login and inspect arguments, and bash arrays for BUILDPARAMS, BUILD_TAGS and the --push flag. I changed two things from that patch. First, buildoptions is now split on whitespace with `read -r -d '' -a` instead of xargs, because upstream expanded the env var unquoted and xargs would honor quotes in the value. Second, the registry argument for docker login is ${INPUT_REGISTRY:+"$INPUT_REGISTRY"}, so an empty registry adds no argument, as it did upstream. action.yml: re-applied the earlier patch, which only removed trailing whitespace and added a final newline. None of this has been run.
 

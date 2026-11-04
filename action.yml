@@ -68,7 +68,7 @@ outputs:
     value: ${{ steps.docker-publish.outputs.digest }}
 runs:
   using: 'composite'
-  steps:
+  steps:      
     - name: Chainguard usage telemetry
       shell: bash
       run: |

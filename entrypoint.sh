@@ -29,7 +29,7 @@ main() {
   fi
 
   if uses "${INPUT_USERNAME}" && uses "${INPUT_PASSWORD}"; then
-    echo "${INPUT_PASSWORD}" | docker login -u "${INPUT_USERNAME}" --password-stdin "${INPUT_REGISTRY}"
+    echo "${INPUT_PASSWORD}" | docker login -u "${INPUT_USERNAME}" --password-stdin ${INPUT_REGISTRY:+"${INPUT_REGISTRY}"}
   fi
 
   FIRST_TAG=$(echo "${TAGS}" | cut -d ' ' -f1)
@@ -194,24 +194,18 @@ build() {
   for TAG in ${TAGS}; do
     BUILD_TAGS+=("-t" "${INPUT_NAME}:${TAG}")
   done
-  # Split INPUT_BUILDOPTIONS safely into an array using word splitting on the
-  # trusted-but-multi-word option string. We use eval-free approach via read.
+  # Split INPUT_BUILDOPTIONS on whitespace, exactly as upstream's unquoted
+  # expansion did (quotes are kept as literal text, nothing is evaluated).
   local BUILDOPTS=()
   if uses "${INPUT_BUILDOPTIONS}"; then
-    while IFS= read -r -d '' opt; do
-      BUILDOPTS+=("$opt")
-    done < <(xargs printf '%s\0' <<< "${INPUT_BUILDOPTIONS}")
+    read -r -d '' -a BUILDOPTS <<< "${INPUT_BUILDOPTIONS}" || true
   fi
   if uses "${INPUT_PLATFORMS}"; then
-    local PUSHING="--push"
-    if usesBoolean "${INPUT_NO_PUSH}"; then
-      PUSHING=""
+    local PUSHING=()
+    if ! usesBoolean "${INPUT_NO_PUSH}"; then
+      PUSHING=("--push")
     fi
-    if [ -n "${PUSHING}" ]; then
-      docker buildx build "${PUSHING}" --metadata-file metadata.json --platform "${INPUT_PLATFORMS}" "${BUILDOPTS[@]}" "${BUILDPARAMS[@]}" "${BUILD_TAGS[@]}" "${CONTEXT}"
-    else
-      docker buildx build --metadata-file metadata.json --platform "${INPUT_PLATFORMS}" "${BUILDOPTS[@]}" "${BUILDPARAMS[@]}" "${BUILD_TAGS[@]}" "${CONTEXT}"
-    fi
+    docker buildx build "${PUSHING[@]}" --metadata-file metadata.json --platform "${INPUT_PLATFORMS}" "${BUILDOPTS[@]}" "${BUILDPARAMS[@]}" "${BUILD_TAGS[@]}" "${CONTEXT}"
   else
     docker build "${BUILDOPTS[@]}" "${BUILDPARAMS[@]}" "${BUILD_TAGS[@]}" "${CONTEXT}"
   fi
